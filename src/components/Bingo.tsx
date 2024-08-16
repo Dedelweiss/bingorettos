@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { bingoData } from '../data/bingoData';
+import { bingoData, adminKeyWord, hints, clue } from '../data/bingoData';
+import basquiatCrown from '../assets/basquiatcrown.png';
 
 type BingoProps = {
   size?: number;
@@ -13,14 +14,18 @@ const Bingo: React.FC<BingoProps> = ({ size = 5 }) => {
   const [selectedCell, setSelectedCell] = useState<number | null>(null);
   const [inputValue, setInputValue] = useState<string>('');
   const [animatedCells, setAnimatedCells] = useState<number[]>([]);
+  const [images, setImages] = useState<(string | null)[]>([]);
+  const [hint, setHint] = useState<string | null>(null);
 
   // Initialize states from localStorage
   useEffect(() => {
     const storedActiveButtons = localStorage.getItem('activeButtons');
     const storedValidatedButtons = localStorage.getItem('validatedButtons');
+    const storedImages = localStorage.getItem('images');
 
     setActiveButtons(storedActiveButtons ? JSON.parse(storedActiveButtons) : Array(bingoData.length).fill(false));
     setValidatedButtons(storedValidatedButtons ? JSON.parse(storedValidatedButtons) : Array(bingoData.length).fill(false));
+    setImages(storedImages ? JSON.parse(storedImages) : Array(bingoData.length).fill(null));
   }, []);
 
   // Update localStorage whenever activeButtons changes
@@ -37,6 +42,13 @@ const Bingo: React.FC<BingoProps> = ({ size = 5 }) => {
     }
   }, [validatedButtons]);
 
+  // Update localStorage whenever images changes
+  useEffect(() => {
+    if (images.length > 0) {
+      localStorage.setItem('images', JSON.stringify(images));
+    }
+  }, [images]);
+
   const handleClick = (index: number) => {
     if (activeButtons[index]) {
       setSelectedCell(index);
@@ -52,25 +64,59 @@ const Bingo: React.FC<BingoProps> = ({ size = 5 }) => {
   };
 
   const handleInputSubmit = () => {
-    const index = bingoData.findIndex(item => item.keyword.toLowerCase() === inputValue.toLowerCase());
-    if (index !== -1) {
-      const newActiveButtons = [...activeButtons];
-      newActiveButtons[index] = true;
-      setActiveButtons(newActiveButtons);
+    if (inputValue.toLowerCase() === adminKeyWord.toLowerCase()) {
+      setActiveButtons(Array(bingoData.length).fill(true));
+    } else if (inputValue.toLowerCase() === clue.toLowerCase()) {
+      const randomHint = hints[Math.floor(Math.random() * hints.length)];
+      setHint(randomHint);
+    } else {
+      const index = bingoData.findIndex(item => item.keyword.toLowerCase() === inputValue.toLowerCase());
+      if (index !== -1) {
+        const newActiveButtons = [...activeButtons];
+        newActiveButtons[index] = true;
+        setActiveButtons(newActiveButtons);
+      }
     }
     setInputValue('');
+  };
+  
+  
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleInputSubmit();
+    }
   };
 
   const handleValidate = () => {
     if (selectedCell !== null) {
       const newValidatedButtons = [...validatedButtons];
-      newValidatedButtons[selectedCell] = true;
+      newValidatedButtons[selectedCell] = !newValidatedButtons[selectedCell]; // Toggle validation state
       setValidatedButtons(newValidatedButtons);
 
       // Check for line or column completion upon validation
       checkForLineOrColumnCompletion(selectedCell, newValidatedButtons);
 
       closeModal();
+    }
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (selectedCell !== null && e.target.files && e.target.files[0]) {
+      const fileReader = new FileReader();
+      fileReader.onload = () => {
+        const newImages = [...images];
+        newImages[selectedCell] = fileReader.result as string;
+        setImages(newImages);
+      };
+      fileReader.readAsDataURL(e.target.files[0]);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    if (selectedCell !== null) {
+      const newImages = [...images];
+      newImages[selectedCell] = null;
+      setImages(newImages);
     }
   };
 
@@ -131,6 +177,7 @@ const Bingo: React.FC<BingoProps> = ({ size = 5 }) => {
         type="text"
         value={inputValue}
         onChange={handleInputChange}
+        onKeyDown={handleKeyPress}
         placeholder="Entrez un mot-clé"
         className="p-2 border border-gray-300 rounded mb-4 text-black"
       />
@@ -141,19 +188,68 @@ const Bingo: React.FC<BingoProps> = ({ size = 5 }) => {
         Activer le bouton
       </button>
 
+      {/* Affichage de l'indice */}
+      {hint && (
+        <div className="mt-4 p-4 bg-yellow-100 text-yellow-800 border border-yellow-300 rounded-lg">
+          {hint}
+        </div>
+      )}
+
       {/* Modal */}
       {selectedCell !== null && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg">
-            <h2 className="text-lg font-bold">
-              {bingoData[selectedCell].text}
+          <div className="bg-white p-6 rounded-lg shadow-lg relative">
+            <h2 className="text-lg p-2 text-center text-black font-bold">
+              {bingoData[selectedCell].keyword}
             </h2>
-            <p>{bingoData[selectedCell].description}</p>
+
+            {/* Split the description */}
+            {bingoData[selectedCell].description.includes(" ou ") ? (
+              <div className="text-center text-black">
+                <p>{bingoData[selectedCell].description.split(" ou ")[0]}</p>
+                <p className="mt-2 font-semibold">ou</p>
+                <p>{bingoData[selectedCell].description.split(" ou ")[1]}</p>
+              </div>
+            ) : (
+              <p className="text-black text-center">{bingoData[selectedCell].description}</p>
+            )}
+
+            {/* Icon with hover text */}
+            <div className="absolute top-2 right-2">
+              <div className="relative group">
+                <img src={basquiatCrown.src} alt="Basquiat Crown" className="w-6 h-6 cursor-pointer" />
+                <div className="absolute bottom-full right-0 mb-2 hidden group-hover:block w-48 p-2 bg-gray-700 text-white text-sm rounded-lg">
+                  {bingoData[selectedCell].lucasDare}
+                </div>
+              </div>
+            </div>
+
+            {images[selectedCell] ? (
+              <>
+                <img src={images[selectedCell]} alt="Selected" className="mb-4 max-h-64" />
+                <button
+                  onClick={handleRemoveImage}
+                  className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 mb-4"
+                >
+                  Delete image
+                </button>
+              </>
+            ) : (
+              <>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageChange}
+                  className="mb-4"
+                />
+              </>
+            )}
+
             <button
               onClick={handleValidate}
               className="mt-4 bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
             >
-              Valider
+              {validatedButtons[selectedCell] ? 'Dévalider' : 'Valider'}
             </button>
             <button
               onClick={closeModal}
