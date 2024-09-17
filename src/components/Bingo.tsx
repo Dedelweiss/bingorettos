@@ -16,17 +16,37 @@ const Bingo: React.FC<BingoProps> = ({ size = 5 }) => {
   const [animatedCells, setAnimatedCells] = useState<number[]>([]);
   const [images, setImages] = useState<(string | null)[]>([]);
   const [hint, setHint] = useState<string | null>(null);
+  const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
+  const [hintUses, setHintUses] = useState<number>(0);
+  const [canUseHint, setCanUseHint] = useState<boolean>(false);
 
   // Initialize states from localStorage
   useEffect(() => {
     const storedActiveButtons = localStorage.getItem('activeButtons');
     const storedValidatedButtons = localStorage.getItem('validatedButtons');
     const storedImages = localStorage.getItem('images');
+    const storedHintUses = localStorage.getItem('hintUses');
+    const lastHintUseDate = localStorage.getItem('lastHintUseDate');
 
     setActiveButtons(storedActiveButtons ? JSON.parse(storedActiveButtons) : Array(bingoData.length).fill(false));
     setValidatedButtons(storedValidatedButtons ? JSON.parse(storedValidatedButtons) : Array(bingoData.length).fill(false));
     setImages(storedImages ? JSON.parse(storedImages) : Array(bingoData.length).fill(null));
+
+    // Check the date to reset the uses if the day has changed
+    const currentDate = new Date().toDateString();
+    if (lastHintUseDate !== currentDate) {
+      setHintUses(0);
+      localStorage.setItem('hintUses', '0'); // Reset usage count
+      localStorage.setItem('lastHintUseDate', currentDate); // Update the date in storage
+    } else {
+      setHintUses(storedHintUses ? parseInt(storedHintUses, 10) : 0);
+    }
   }, []);
+
+  // Update localStorage whenever hintUses changes
+  useEffect(() => {
+    localStorage.setItem('hintUses', hintUses.toString());
+  }, [hintUses]);
 
   // Update localStorage whenever activeButtons changes
   useEffect(() => {
@@ -49,6 +69,35 @@ const Bingo: React.FC<BingoProps> = ({ size = 5 }) => {
     }
   }, [images]);
 
+  // Check if the button should be active based on the time (between 12:30 and 12:31)
+  useEffect(() => {
+    const checkTime = () => {
+      const now = new Date();
+      const hour = now.getHours();
+      const minute = now.getMinutes();
+
+      // Activate the button only between 12:30 and 12:31, with a limit of 5 uses per day
+      if (hour === 12 && minute === 30 && hintUses < 5) {
+        setCanUseHint(true);
+      } else {
+        setCanUseHint(false);
+      }
+    };
+
+    // Check the time immediately and set up an interval to check every second
+    checkTime();
+    const intervalId = setInterval(checkTime, 1000); // Check every second
+    return () => clearInterval(intervalId); // Cleanup on component unmount
+  }, [hintUses]);
+
+  const handleHintButtonClick = () => {
+    if (canUseHint && hintUses < 5) {
+      const randomHint = hints[Math.floor(Math.random() * hints.length)];
+      setHint(randomHint);
+      setHintUses(hintUses + 1);
+    }
+  };
+
   const handleClick = (index: number) => {
     if (activeButtons[index]) {
       setSelectedCell(index);
@@ -64,13 +113,17 @@ const Bingo: React.FC<BingoProps> = ({ size = 5 }) => {
   };
 
   const handleInputSubmit = () => {
-    if (inputValue.toLowerCase() === adminKeyWord.toLowerCase()) {
+    const trimmedInputValue = inputValue.toLowerCase().trim();
+  
+    if (trimmedInputValue === adminKeyWord.toLowerCase().trim()) {
       setActiveButtons(Array(bingoData.length).fill(true));
-    } else if (inputValue.toLowerCase() === clue.toLowerCase()) {
+    } else if (trimmedInputValue === clue.toLowerCase().trim()) {
       const randomHint = hints[Math.floor(Math.random() * hints.length)];
       setHint(randomHint);
     } else {
-      const index = bingoData.findIndex(item => item.keyword.toLowerCase() === inputValue.toLowerCase());
+      const index = bingoData.findIndex(item => 
+        item.keyword.some(keyword => keyword.toLowerCase().trim().includes(trimmedInputValue))
+      );
       if (index !== -1) {
         const newActiveButtons = [...activeButtons];
         newActiveButtons[index] = true;
@@ -79,7 +132,6 @@ const Bingo: React.FC<BingoProps> = ({ size = 5 }) => {
     }
     setInputValue('');
   };
-  
   
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -146,8 +198,38 @@ const Bingo: React.FC<BingoProps> = ({ size = 5 }) => {
     }
   }, [animatedCells]);
 
+  const toggleInfoModal = () => {
+    setIsInfoModalOpen(!isInfoModalOpen);
+  };
+
   return (
     <div className="flex flex-col items-center">
+      <div className="flex items-center mb-4">
+        <h1 className='uppercase text-2xl pb-10'>Bingorettos porto</h1>
+        <button 
+          onClick={toggleInfoModal} 
+          className="ml-4 bg-blue-500 text-white px-2 py-1 rounded-lg hover:bg-blue-600">
+          ?
+        </button>
+      </div>
+
+      {/* Info Modal */}
+      {isInfoModalOpen && (
+        <div className="fixed inset-0 flex items-center justify-center text-black bg-opacity-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg max-w-3xl">
+            <h2 className="text-lg font-bold mb-4">Informations</h2>
+            <p className='pb-2'>Salut les ptits potes, le but de ce jeu est de débloquer les cases en trouvant le mot clé correspondant. Lorsque celle-ci sera débloqué vous pourrez essayé de la valider en executant un défi ou étant présent durant un évenement précis. Amusez vous bien</p>
+            <p className="mb-2">Les cases <span className="text-red-500">rouges</span> sont à réaliser en groupe. Tu peux les partager si tu le souhaite</p>
+            <p className="mb-2">Les cases <span className="text-blue-500">bleues</span> sont à réaliser seul. Ne les partage pas</p>
+            <button 
+              onClick={toggleInfoModal} 
+              className="mt-4 bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600">
+              Fermer
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-5 gap-4 mb-4">
         {bingoData.slice(0, size * size).map((item, index) => (
           <div key={item.id} className="p-2">
@@ -188,6 +270,15 @@ const Bingo: React.FC<BingoProps> = ({ size = 5 }) => {
         Activer le bouton
       </button>
 
+      {/* Bouton d'affichage d'indice */}
+      <button
+        onClick={handleHintButtonClick}
+        disabled={!canUseHint}
+        className={`mt-4 px-4 py-2 rounded-lg ${canUseHint ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-400 text-gray-700 cursor-not-allowed'}`}
+      >
+        Obtenir un indice (Disponible entre 12:30 et 12:31)
+      </button>
+
       {/* Affichage de l'indice */}
       {hint && (
         <div className="mt-4 p-4 bg-yellow-100 text-yellow-800 border border-yellow-300 rounded-lg">
@@ -198,12 +289,11 @@ const Bingo: React.FC<BingoProps> = ({ size = 5 }) => {
       {/* Modal */}
       {selectedCell !== null && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg relative">
+          <div className="bg-white p-6 rounded-lg shadow-lg max-w-3xl relative">
             <h2 className="text-lg p-2 text-center text-black font-bold">
               {bingoData[selectedCell].keyword}
             </h2>
 
-            {/* Split the description */}
             {bingoData[selectedCell].description.includes(" ou ") ? (
               <div className="text-center text-black">
                 <p>{bingoData[selectedCell].description.split(" ou ")[0]}</p>
@@ -214,7 +304,6 @@ const Bingo: React.FC<BingoProps> = ({ size = 5 }) => {
               <p className="text-black text-center">{bingoData[selectedCell].description}</p>
             )}
 
-            {/* Icon with hover text */}
             <div className="absolute top-2 right-2">
               <div className="relative group">
                 <img src={basquiatCrown.src} alt="Basquiat Crown" className="w-6 h-6 cursor-pointer" />
@@ -229,7 +318,7 @@ const Bingo: React.FC<BingoProps> = ({ size = 5 }) => {
                 <img src={images[selectedCell]} alt="Selected" className="mb-4 max-h-64" />
                 <button
                   onClick={handleRemoveImage}
-                  className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 mb-4"
+                  className="bg-red-500 text-white px-4 py-2 pr-2 rounded-lg hover:bg-red-600 mb-4"
                 >
                   Delete image
                 </button>
